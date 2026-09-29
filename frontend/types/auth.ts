@@ -1,7 +1,7 @@
 export type Role = "INVENTORY_MANAGER" | "WAREHOUSE_STAFF";
 
 export interface User {
-  id: string;
+  id: number;
   name: string;
   email: string;
   role: Role;
