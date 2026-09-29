@@ -17,4 +17,16 @@ export const authService = {
     const res = await api.get<User>("/auth/me");
     return res.data;
   },
+  forgotPassword: async (email: string): Promise<void> => {
+    await api.post("/auth/forgot-password", { email });
+  },
+
+  verifyOtp: async (email: string, otp: string): Promise<{ resetToken: string }> => {
+    const res = await api.post<{ resetToken: string }>("/auth/verify-otp", { email, otp });
+    return res.data;
+  },
+
+  resetPassword: async (email: string, resetToken: string, password: string): Promise<void> => {
+    await api.post("/auth/reset-password", { email, resetToken, password });
+  },
 };
