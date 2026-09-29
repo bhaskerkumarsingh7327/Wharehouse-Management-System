@@ -3,12 +3,11 @@
 
 generator client {
   provider = "prisma-client"
-  output   = "../generated/prisma"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
 }
 
 enum RoleName {
@@ -30,4 +29,323 @@ enum DocumentStatus {
   READY
   DONE
   CANCELED
+}
+
+model Role {
+  id    Int      @id @default(autoincrement())
+  name  RoleName @unique
+  users User[]
+
+  @@map("roles")
+}
+
+model User {
+  id           Int     @id @default(autoincrement())
+  name         String
+  email        String  @unique
+  passwordHash String  @map("password_hash")
+  isActive     Boolean @default(true) @map("is_active")
+
+  roleId Int  @map("role_id")
+  role   Role @relation(fields: [roleId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations we'll connect later (receipts, deliveries, etc. performed by this user)
+  receipts    Receipt[]
+  deliveries  Delivery[]
+  transfers   Transfer[]
+  adjustments StockAdjustment[]
+  movements   StockMovement[]
+
+  @@map("users")
+}
+
+model Warehouse {
+  id       Int     @id @default(autoincrement())
+  name     String
+  code     String  @unique
+  address  String?
+  isActive Boolean @default(true) @map("is_active")
+
+  locations Location[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("warehouses")
+}
+
+model Location {
+  id   Int    @id @default(autoincrement())
+  name String
+
+  warehouseId Int       @map("warehouse_id")
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+
+  stocks Stock[]
+
+  transfersFrom TransferItem[] @relation("TransferSource")
+  transfersTo   TransferItem[] @relation("TransferDestination")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([warehouseId, name])
+  @@map("locations")
+}
+
+model Category {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  products Product[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("categories")
+}
+
+model Supplier {
+  id      Int     @id @default(autoincrement())
+  name    String
+  email   String?
+  phone   String?
+  address String?
+
+  receipts Receipt[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("suppliers")
+}
+
+model Product {
+  id   Int    @id @default(autoincrement())
+  name String
+  sku  String @unique
+
+  unitOfMeasure String @map("unit_of_measure")
+
+  categoryId Int?      @map("category_id")
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  minStock Decimal @default(0) @map("min_stock") @db.Decimal(14, 3)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  stocks           Stock[]
+  stockMovements   StockMovement[]
+  receiptItems     ReceiptItem[]
+  deliveryItems    DeliveryItem[]
+  transferItems    TransferItem[]
+  stockAdjustments StockAdjustment[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("products")
+}
+
+model Stock {
+  id Int @id @default(autoincrement())
+
+  productId Int     @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+
+  locationId Int      @map("location_id")
+  location   Location @relation(fields: [locationId], references: [id])
+
+  quantity Decimal @default(0) @db.Decimal(14, 3)
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([productId, locationId])
+  @@map("stock")
+}
+
+model StockMovement {
+  id Int @id @default(autoincrement())
+
+  productId Int     @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+
+  locationId Int @map("location_id")
+
+  movementType MovementType @map("movement_type")
+
+  quantity Decimal @db.Decimal(14, 3)
+
+  previousStock Decimal @map("previous_stock") @db.Decimal(14, 3)
+  newStock      Decimal @map("new_stock") @db.Decimal(14, 3)
+
+  referenceType String @map("reference_type")
+  referenceId   Int    @map("reference_id")
+
+  performedById Int  @map("performed_by_id")
+  performedBy   User @relation(fields: [performedById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([productId])
+  @@index([locationId])
+  @@index([referenceType, referenceId])
+  @@map("stock_movements")
+}
+
+model Receipt {
+  id   Int    @id @default(autoincrement())
+  code String @unique
+
+  supplierId Int      @map("supplier_id")
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+
+  warehouseId Int @map("warehouse_id")
+
+  status DocumentStatus @default(DRAFT)
+
+  notes String?
+
+  createdById Int  @map("created_by_id")
+  createdBy   User @relation(fields: [createdById], references: [id])
+
+  validatedAt DateTime? @map("validated_at")
+
+  items ReceiptItem[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("receipts")
+}
+
+model ReceiptItem {
+  id Int @id @default(autoincrement())
+
+  receiptId Int     @map("receipt_id")
+  receipt   Receipt @relation(fields: [receiptId], references: [id])
+
+  productId Int     @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+
+  locationId Int @map("location_id")
+
+  expectedQuantity Decimal  @map("expected_quantity") @db.Decimal(14, 3)
+  receivedQuantity Decimal? @map("received_quantity") @db.Decimal(14, 3)
+
+  @@map("receipt_items")
+}
+
+model Delivery {
+  id   Int    @id @default(autoincrement())
+  code String @unique
+
+  customerName String? @map("customer_name")
+
+  warehouseId Int @map("warehouse_id")
+
+  status DocumentStatus @default(DRAFT)
+
+  notes String?
+
+  createdById Int  @map("created_by_id")
+  createdBy   User @relation(fields: [createdById], references: [id])
+
+  validatedAt DateTime? @map("validated_at")
+
+  items DeliveryItem[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("deliveries")
+}
+
+model DeliveryItem {
+  id Int @id @default(autoincrement())
+
+  deliveryId Int      @map("delivery_id")
+  delivery   Delivery @relation(fields: [deliveryId], references: [id])
+
+  productId Int     @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+
+  locationId Int @map("location_id")
+
+  requestedQuantity Decimal  @map("requested_quantity") @db.Decimal(14, 3)
+  deliveredQuantity Decimal? @map("delivered_quantity") @db.Decimal(14, 3)
+
+  @@map("delivery_items")
+}
+
+model Transfer {
+  id   Int    @id @default(autoincrement())
+  code String @unique
+
+  status DocumentStatus @default(DRAFT)
+
+  notes String?
+
+  createdById Int  @map("created_by_id")
+  createdBy   User @relation(fields: [createdById], references: [id])
+
+  validatedAt DateTime? @map("validated_at")
+
+  items TransferItem[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("transfers")
+}
+
+model TransferItem {
+  id Int @id @default(autoincrement())
+
+  transferId Int      @map("transfer_id")
+  transfer   Transfer @relation(fields: [transferId], references: [id])
+
+  productId Int     @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+
+  sourceLocationId Int      @map("source_location_id")
+  sourceLocation   Location @relation("TransferSource", fields: [sourceLocationId], references: [id])
+
+  destinationLocationId Int      @map("destination_location_id")
+  destinationLocation   Location @relation("TransferDestination", fields: [destinationLocationId], references: [id])
+
+  quantity Decimal @db.Decimal(14, 3)
+
+  @@map("transfer_items")
+}
+
+model StockAdjustment {
+  id   Int    @id @default(autoincrement())
+  code String @unique
+
+  productId Int     @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+
+  locationId Int @map("location_id")
+
+  systemStock   Decimal @map("system_stock") @db.Decimal(14, 3)
+  physicalCount Decimal @map("physical_count") @db.Decimal(14, 3)
+  difference    Decimal @db.Decimal(14, 3)
+
+  reason String?
+
+  status DocumentStatus @default(DRAFT)
+
+  createdById Int  @map("created_by_id")
+  createdBy   User @relation(fields: [createdById], references: [id])
+
+  validatedAt DateTime? @map("validated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("stock_adjustments")
 }
